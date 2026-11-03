@@ -1,0 +1,19 @@
+# data and models (real IPs and usernames, never in git)
+data/
+*.joblib
+*.jsonl
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# secrets and local config
+knockd.conf
+*.local
+.env
+
+# tooling
+CLAUDE.md
+.claude/
