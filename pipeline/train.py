@@ -21,7 +21,8 @@ NOISE_START = pd.Timestamp("2026-10-23 15:10", tz="+01:00")
 NOISE_END = pd.Timestamp("2026-10-23 15:30", tz="+01:00")
 
 
-def load_training_features():
+def load_normal():
+    """Normal rows: real without the setup noise, and synthetic."""
     real = pd.read_json(DATA / "real.jsonl", lines=True)
     noise = (real["timestamp"] >= NOISE_START) & (real["timestamp"] <= NOISE_END)
     real = real[~noise]
@@ -29,11 +30,16 @@ def load_training_features():
     synth_files = sorted(DATA.glob("synthetic*.jsonl"))
     synth = pd.concat([pd.read_json(f, lines=True) for f in synth_files],
                       ignore_index=True)
+    return real, synth, len(synth_files)
+
+
+def load_training_features():
+    real, synth, n_files = load_normal()
 
     # Real and synthetic are separate timelines, features are built per table.
     train = pd.concat([build_features(real)[FEATURES],
                        build_features(synth)[FEATURES]], ignore_index=True)
-    print(f"real {len(real)} + synthetic {len(synth)} ({len(synth_files)} files)"
+    print(f"real {len(real)} + synthetic {len(synth)} ({n_files} files)"
           f" = {len(train)} rows")
     return train
 
