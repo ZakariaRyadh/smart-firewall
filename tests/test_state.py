@@ -7,8 +7,9 @@ import pandas as pd
 
 from sfw.decide import Decision
 from sfw.features import CAP_SECONDS, FEATURES, build_features
-from sfw.state import (connect, is_known, live_features, log_decision,
-                       mark_known, recent_knocks, record_knock)
+from sfw.state import (connect, decision_counts, get_meta, is_known,
+                       live_features, log_decision, mark_known, recent_decisions,
+                       recent_knocks, record_knock, set_meta)
 
 TZ = timezone(timedelta(hours=1))
 NOW = datetime(2026, 11, 7, 15, 0, 0, tzinfo=TZ)
@@ -54,6 +55,24 @@ class TestState(unittest.TestCase):
         log_decision(self.db, "1.1.1.1", NOW, Decision("block", "rate_1min"))
         row = self.db.execute("SELECT ip, action, reason, score FROM decisions").fetchone()
         self.assertEqual(row, ("1.1.1.1", "block", "rate_1min", None))
+
+    def test_recent_decisions_and_counts(self):
+        feats = {"hour": 15, "dow": 5, "is_known_ip": 1,
+                 "time_since_last": 60.0, "attempts_last_5min": 0}
+        for i in range(5):
+            log_decision(self.db, "1.1.1.1", NOW + timedelta(seconds=i),
+                         Decision("allow", "model", -0.4), feats)
+        log_decision(self.db, "2.2.2.2", NOW, Decision("block", "rate_1min"))
+        newest = recent_decisions(self.db, limit=3)
+        self.assertEqual([e["id"] for e in newest], [4, 5, 6])  # newest 3, oldest first
+        self.assertEqual(recent_decisions(self.db, after_id=5)[0]["ip"], "2.2.2.2")
+        self.assertEqual(recent_decisions(self.db, after_id=1)[0]["features"]["hour"], 15)
+        self.assertEqual(decision_counts(self.db), {"allow": 5, "block": 1})
+
+    def test_meta(self):
+        self.assertIsNone(get_meta(self.db, "demo"))
+        set_meta(self.db, "demo", "1")
+        self.assertEqual(get_meta(self.db, "demo"), "1")
 
 
 class TestParity(unittest.TestCase):

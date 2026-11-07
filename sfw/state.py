@@ -15,6 +15,7 @@ match training). Times are stored as epoch seconds.
 Only normal history and allowed knocks make an IP known, so an attacker never
 becomes known by knocking.
 """
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS known_ips (
     ip TEXT PRIMARY KEY, first_seen REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS decisions (
     id INTEGER PRIMARY KEY, ts REAL NOT NULL, ip TEXT NOT NULL,
-    action TEXT NOT NULL, reason TEXT NOT NULL, score REAL);
+    action TEXT NOT NULL, reason TEXT NOT NULL, score REAL, features TEXT);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
 
@@ -38,6 +40,11 @@ def connect(path):
     db.execute("PRAGMA journal_mode=WAL")  # dashboard can read while the hook writes
     db.executescript(SCHEMA)
     return db
+
+
+def connect_readonly(path):
+    """Read-only connection for the dashboard: it can never change the state."""
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
 
 def record_knock(db, ip, now, ok=True):
@@ -81,9 +88,39 @@ def live_features(db, ip, now):
             "time_since_last": gap, "attempts_last_5min": attempts}
 
 
-def log_decision(db, ip, now, decision):
+def log_decision(db, ip, now, decision, features=None):
+    """`features` is the feature_row the decision used (shown on the dashboard)."""
+    feats = None if features is None else json.dumps(
+        {k: float(v) for k, v in features.items()})
     with db:
-        db.execute("INSERT INTO decisions (ts, ip, action, reason, score) "
-                   "VALUES (?, ?, ?, ?, ?)",
+        db.execute("INSERT INTO decisions (ts, ip, action, reason, score, features) "
+                   "VALUES (?, ?, ?, ?, ?, ?)",
                    (now.timestamp(), ip, decision.action, decision.reason,
-                    decision.score))
+                    decision.score, feats))
+
+
+def recent_decisions(db, after_id=0, limit=200):
+    """Decisions with id > after_id, oldest first. On the first call
+    (after_id=0) only the newest `limit` are returned."""
+    rows = db.execute(
+        "SELECT id, ts, ip, action, reason, score, features FROM decisions "
+        "WHERE id > ? ORDER BY id DESC LIMIT ?", (after_id, limit)).fetchall()
+    out = []
+    for id_, ts, ip, action, reason, score, feats in reversed(rows):
+        out.append({"id": id_, "ts": ts, "ip": ip, "action": action, "reason": reason,
+                    "score": score, "features": json.loads(feats) if feats else None})
+    return out
+
+
+def decision_counts(db):
+    return dict(db.execute("SELECT action, COUNT(*) FROM decisions GROUP BY action"))
+
+
+def get_meta(db, key):
+    row = db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_meta(db, key, value):
+    with db:
+        db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))

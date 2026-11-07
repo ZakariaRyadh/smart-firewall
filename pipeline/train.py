@@ -57,8 +57,17 @@ def main():
     lowest = scores.min()
     print(f"allow above {p5:.4f}, block below {lowest:.4f}")
 
+    # Usual range of each feature in the normal data (5th to 95th percentile).
+    # Only for display on the dashboard, the model does not use it.
+    def rng(col):
+        return [float(train[col].quantile(0.05)), float(train[col].quantile(0.95))]
+    normal = {"hour": rng("hour"), "time_since_last": rng("time_since_last"),
+              "attempts_last_5min": rng("attempts_last_5min"),
+              "is_known_ip": bool(train["is_known_ip"].mean() > 0.5)}
+    print("usual ranges:", normal)
+
     joblib.dump({"model": model, "p5": p5, "lowest": lowest,
-                 "features": FEATURES}, args.out)
+                 "features": FEATURES, "normal": normal}, args.out)
     print("saved", args.out)
 
 

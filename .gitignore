@@ -17,3 +17,7 @@ knockd.conf
 # tooling
 CLAUDE.md
 .claude/
+
+# dashboard build
+dashboard/web/node_modules/
+dashboard/web/dist/
