@@ -1,19 +1,25 @@
-// Left column: title, counters, last block, recent-attempt strip, live status.
+// Left column: title, counters, last block, recent-login strip, live status.
 import type { Action, Decision, Normal } from "../types";
 import { ACTION_HELP, ACTION_WORD, dateLong, pad, whyShort } from "../explain";
+import { Mark, TONE_BG, TONE_TEXT } from "./Mark";
 
 const ORDER: Action[] = ["allow", "harder_knock", "block"];
+const BAR: Record<Action, string> = { allow: "h-[30%] bg-ok", harder_knock: "h-[62%] bg-warn", block: "h-full bg-bad" };
 
 function Strip({ log }: { log: Decision[] }) {
   const last = log.slice(0, 60).reverse();
   return (
-    <div className="strip">
+    <div className="flex flex-col gap-2">
       <span className="eyebrow">Last {last.length} logins</span>
-      <div className="strip__bars" aria-hidden="true">
-        {last.map((d) => <i key={d.id} data-act={d.action} />)}
-        {Array.from({ length: 60 - last.length }, (_, i) => <i key={`e${i}`} className="empty" />)}
+      <div className="flex h-[34px] items-end gap-0.5" aria-hidden="true">
+        {last.map((d) => (
+          <i key={d.id} className={`block flex-1 transition-[height] duration-[400ms] ease-soft ${BAR[d.action]}`} />
+        ))}
+        {Array.from({ length: 60 - last.length }, (_, i) => (
+          <i key={`e${i}`} className="block h-[12%] flex-1 bg-track" />
+        ))}
       </div>
-      <span className="strip__hint">Oldest on the left. Taller = more dangerous.</span>
+      <span className="text-xs text-mut">Oldest on the left. Taller = more dangerous.</span>
     </div>
   );
 }
@@ -22,19 +28,23 @@ function LastBlock({ log, normal, onShow }: { log: Decision[]; normal: Normal | 
   const b = log.find((d) => d.action === "block");
   if (!b) {
     return (
-      <div className="alert alert--none">
+      <div className="flex flex-col gap-1 border border-l-4 border-rule px-3.5 py-3">
         <span className="eyebrow">Last blocked</span>
-        <span className="alert__why">Nothing blocked yet.</span>
+        <span className="text-sm">Nothing blocked yet.</span>
       </div>
     );
   }
   return (
-    <button type="button" className="alert" data-act="block" onClick={() => onShow(b.id)}>
-      <span className="eyebrow">Last blocked</span>
-      <span className="alert__ip mono">{b.ip}</span>
-      <span className="alert__when">{dateLong(b, false)} at {b.ts.slice(11, 16)}</span>
-      <span className="alert__why">{whyShort(b, normal)}</span>
-      <span className="alert__go">Show details →</span>
+    <button
+      type="button"
+      onClick={() => onShow(b.id)}
+      className="flex flex-col gap-1 border border-l-4 border-bad bg-bad/[0.06] px-3.5 py-3 text-left transition-colors hover:bg-bad/[0.14]"
+    >
+      <span className="eyebrow text-bad">Last blocked</span>
+      <span className="font-mono text-lg font-bold">{b.ip}</span>
+      <span className="text-[13px] text-soft">{dateLong(b, false)} at {b.ts.slice(11, 16)}</span>
+      <span className="text-sm">{whyShort(b, normal)}</span>
+      <span className="mt-1 text-[13px] text-bad">Show details →</span>
     </button>
   );
 }
@@ -53,28 +63,33 @@ interface Props {
 
 export function Rail({ counts, log, normal, demo, connected, updated, anyOpen, onClose, onShow }: Props) {
   const total = ORDER.reduce((s, a) => s + counts[a], 0);
+  const pct = (a: Action) => (total ? (counts[a] / total) * 100 : 0);
   const t = updated ? `${pad(updated.getHours())}:${pad(updated.getMinutes())}:${pad(updated.getSeconds())}` : "--:--:--";
   return (
-    <aside className="rail">
+    <aside className="flex min-h-0 flex-col gap-[clamp(18px,3.4vh,34px)] overflow-y-auto border-r border-ink px-[26px] pt-[clamp(20px,4vh,40px)] pb-6 max-lg:border-r-0 max-lg:border-b">
       <header>
-        <h1>Smart Firewall</h1>
-        <p className="tag">Checks how you connect, not just the password.</p>
+        <h1 className="font-serif text-[clamp(28px,4vh,38px)] leading-[1.02] font-bold tracking-[-0.02em]">Smart Firewall</h1>
+        <p className="mt-2.5 max-w-[18em] text-[15px] text-mut">Checks how you connect, not just the password.</p>
       </header>
 
-      <div className="stats">
+      <div className="flex flex-col gap-[clamp(10px,2vh,18px)] max-lg:flex-row max-lg:flex-wrap">
         {ORDER.map((a) => (
-          <div key={a} className="stat" data-act={a}>
-            <span className="stat__row">
-              <span className="stat__n">{counts[a]}</span>
-              <span className="stat__pct">{total ? Math.round((counts[a] / total) * 100) : 0}%</span>
+          <div key={a} className="border-t border-ink pt-2 max-lg:flex-[1_1_30%]">
+            <span className="flex items-baseline justify-between">
+              <span className={`font-serif text-[clamp(34px,5.6vh,60px)] leading-none font-bold tracking-[-0.03em] tabular-nums ${TONE_TEXT[a]}`}>
+                {counts[a]}
+              </span>
+              <span className="font-mono text-sm leading-none text-mut">{Math.round(pct(a))}%</span>
             </span>
-            <span className="stat__k"><i className="mk" data-act={a} />{ACTION_WORD[a]}</span>
-            <span className="stat__help">{ACTION_HELP[a]}</span>
+            <span className="mt-1.5 flex items-center gap-2 text-[13px] font-semibold tracking-[0.1em] uppercase">
+              <Mark a={a} />{ACTION_WORD[a]}
+            </span>
+            <span className="mt-[3px] block text-[13px] text-mut">{ACTION_HELP[a]}</span>
           </div>
         ))}
-        <div className="share" aria-hidden="true">
+        <div className="mt-1 flex h-1.5 gap-0.5 max-lg:basis-full" aria-hidden="true">
           {ORDER.map((a) => (
-            <i key={a} data-act={a} style={{ width: `${total ? (counts[a] / total) * 100 : 0}%` }} />
+            <i key={a} className={`block min-w-0 transition-[width] duration-[600ms] ease-soft ${TONE_BG[a]}`} style={{ width: `${pct(a)}%` }} />
           ))}
         </div>
       </div>
@@ -83,14 +98,24 @@ export function Rail({ counts, log, normal, demo, connected, updated, anyOpen, o
 
       <Strip log={log} />
 
-      <footer className="rail__foot">
-        {demo && <span className="badge" title="Generated by us with attack_sim, not real traffic">Demo data</span>}
-        {anyOpen && (
-          <button type="button" className="follow" onClick={onClose}>Close details (Esc)</button>
+      <footer className="mt-auto flex flex-col gap-2.5 text-sm text-mut">
+        {demo && (
+          <span
+            title="Generated by us with attack_sim, not real traffic"
+            className="self-start border border-warn px-2 py-[5px] font-mono text-[11px] leading-none tracking-[0.1em] text-warn uppercase"
+          >
+            Demo data
+          </span>
         )}
-        <span className={`live${connected ? "" : " live--off"}`}>
-          <i className="dot" /> {connected ? "Live" : "Disconnected, retrying"}
-          <span className="upd">· updated <span className="mono">{t}</span></span>
+        {anyOpen && (
+          <button type="button" onClick={onClose} className="border border-ink px-3 py-2 text-left text-sm text-ink hover:bg-ink hover:text-bg">
+            Close details (Esc)
+          </button>
+        )}
+        <span className={`flex items-center gap-2 ${connected ? "" : "text-warn"}`}>
+          <i className={`size-2 rounded-full ${connected ? "animate-blink bg-ok" : "border-[1.5px] border-warn"}`} />
+          {connected ? "Live" : "Disconnected, retrying"}
+          <span className="text-mut">· updated <span className="font-mono">{t}</span></span>
         </span>
       </footer>
     </aside>

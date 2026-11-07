@@ -18,25 +18,33 @@ function tiles(f: Features, n: Normal, ts: string): Tile[] {
   ];
 }
 
-function TileView({ t }: { t: Tile }) {
+function TileView({ t, allow }: { t: Tile; allow: boolean }) {
+  // On an allowed login an unusual value is a warning, not a failure.
+  const tone = allow ? "text-warn" : "text-acc";
   return (
-    <div className={`tile${t.out ? " tile--out" : ""}`}>
+    <div className="flex min-w-0 flex-col gap-[7px]">
       <span className="eyebrow">{t.label}</span>
-      <span className="tile__value">{t.value}</span>
-      <span className="tile__usual">{t.out ? "⚠ Unusual" : "✓ Normal"}</span>
+      <span className={`font-mono text-[clamp(18px,2.8vh,26px)] leading-none font-bold ${t.out ? tone : "text-soft"}`}>{t.value}</span>
+      <span className={`text-[13px] ${t.out ? `font-semibold ${tone}` : "text-mut"}`}>{t.out ? "⚠ Unusual" : "✓ Normal"}</span>
     </div>
   );
 }
 
 export function Detail({ d, bands, normal }: { d: Decision; bands: Bands | null; normal: Normal | null }) {
+  const allow = d.action === "allow";
   return (
-    <div className="detail" data-act={d.action}>
-      <p className="detail__why">{why(d, normal)}</p>
+    <div
+      data-act={d.action}
+      className="flex animate-fade flex-col gap-[clamp(14px,2.6vh,26px)] border-t border-rule bg-panel pt-[clamp(16px,3vh,30px)] pr-8 pb-[clamp(18px,3.2vh,32px)] pl-9 max-lg:p-4"
+    >
+      <p className={`max-w-[30em] font-serif text-[clamp(22px,3.6vh,38px)] leading-[1.16] tracking-[-0.015em] ${allow ? "" : "text-acc"}`}>
+        {why(d, normal)}
+      </p>
       <ScoreScale d={d} bands={bands} />
       {d.features && normal && (
-        <div className="tiles">
-          <span className="eyebrow tiles__title">Details</span>
-          {tiles(d.features, normal, d.ts).map((t) => <TileView key={t.label} t={t} />)}
+        <div className="grid grid-cols-4 gap-x-[22px] gap-y-3 border-t border-ink pt-3 max-lg:grid-cols-2">
+          <span className="eyebrow col-span-full">Details</span>
+          {tiles(d.features, normal, d.ts).map((t) => <TileView key={t.label} t={t} allow={allow} />)}
         </div>
       )}
     </div>

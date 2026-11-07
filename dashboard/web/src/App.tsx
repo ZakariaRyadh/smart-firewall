@@ -21,7 +21,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className="grid h-screen grid-cols-[clamp(250px,21vw,330px)_1fr] max-lg:h-auto max-lg:grid-cols-1">
       <Rail
         counts={ev.counts}
         log={ev.log}

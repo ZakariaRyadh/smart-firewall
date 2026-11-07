@@ -28,33 +28,38 @@ export function ScoreScale({ d, bands }: { d: Decision; bands: Bands | null }) {
   if (!bands) return null;
   const g = geometry(bands);
   const rule = isRule(d) || d.score === null;
+  const on = (a: Action) => !rule && a === d.action;
   const zones = [
     { a: "allow" as Action, from: 0, to: 100 - g.allow },
     { a: "harder_knock" as Action, from: 100 - g.allow, to: 100 - g.block },
     { a: "block" as Action, from: 100 - g.block, to: 100 },
   ];
   return (
-    <div className={`scale${rule ? " scale--dim" : ""}`} data-act={d.action} title={scoreTitle(d, bands)}>
-      <div className="scale__head">
+    <div data-act={d.action} title={scoreTitle(d, bands)} className="flex max-w-[760px] flex-col gap-2.5">
+      <div className="flex items-baseline justify-between gap-4">
         <span className="eyebrow">Risk</span>
-        {rule && <span className="scale__note">Stopped by a safety rule</span>}
+        {rule && <span className="text-[13px] text-mut">Stopped by a safety rule</span>}
       </div>
-      <div className="scale__track">
+      <div className="relative h-[52px]">
         {zones.map((z) => (
           <span
             key={z.a}
-            className={`scale__zone${!rule && z.a === d.action ? " on" : ""}`}
-            data-zone={z.a}
+            className={`absolute top-[18px] h-2.5 border-r-2 border-panel ${on(z.a) ? "bg-acc" : "bg-track"} ${rule ? "opacity-35" : ""}`}
             style={{ left: `${z.from}%`, width: `${z.to - z.from}%` }}
           >
-            <span className="scale__label">{ACTION_WORD[z.a]}</span>
+            <span className={`absolute inset-x-0 top-4 text-center text-[13px] whitespace-nowrap ${on(z.a) ? "font-bold text-acc" : "text-mut"}`}>
+              {ACTION_WORD[z.a]}
+            </span>
           </span>
         ))}
         {!rule && d.score !== null && (
-          <span className="scale__marker" style={{ left: `${100 - scorePct(d.score, g)}%` }} />
+          <span
+            className="absolute top-[3px] size-0 -translate-x-1/2 border-x-8 border-t-[11px] border-x-transparent border-t-acc transition-[left] duration-[600ms] ease-soft"
+            style={{ left: `${100 - scorePct(d.score, g)}%` }}
+          />
         )}
       </div>
-      <div className="scale__ends" aria-hidden="true"><span>Low</span><span>High</span></div>
+      <div className="-mt-1 flex justify-between text-xs text-mut" aria-hidden="true"><span>Low</span><span>High</span></div>
     </div>
   );
 }
