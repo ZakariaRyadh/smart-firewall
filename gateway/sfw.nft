@@ -13,10 +13,17 @@ table inet sfw {
         flags timeout
         timeout 30s
     }
+    # IPs the hook blocked. The entry expires, so a block is not forever.
+    set blocked {
+        type ipv4_addr
+        flags timeout
+        timeout 10m
+    }
     chain input {
         type filter hook input priority 0; policy drop;
         iif lo accept
         iifname "enp1s0" accept
+        ip saddr @blocked drop
         ct state established,related accept
         icmp type echo-request accept
         ip saddr @knocked tcp dport 22 accept
