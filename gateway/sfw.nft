@@ -7,6 +7,11 @@
 # never locks out). On the Pi use tailscale0 and the LAN card instead, and test
 # with the `at` rollback first (see vault: Pi-Setup-and-Data-Pipeline).
 
+# Safe to reload: the next two lines create the table if missing, then delete
+# it, so the file below always starts clean (all in one atomic load).
+table inet sfw
+delete table inet sfw
+
 table inet sfw {
     set knocked {
         type ipv4_addr

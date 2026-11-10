@@ -8,5 +8,7 @@
     sequence    = CHANGE_ME_1,CHANGE_ME_2,CHANGE_ME_3
     seq_timeout = 10
     tcpflags    = syn
-    # %IP% is filled in by knockd with the knocker's address.
-    command     = /usr/sbin/nft add element inet sfw knocked { %IP% }
+    # %IP% is filled in by knockd with the knocker's address. The hook scores
+    # the knock and then allows, blocks or ignores it (see gateway/hook.py).
+    # Adjust the install folder to where the repo and .venv live on the gateway.
+    command     = /bin/sh -c 'cd /opt/smart-firewall && .venv/bin/python -m gateway.hook %IP%'
