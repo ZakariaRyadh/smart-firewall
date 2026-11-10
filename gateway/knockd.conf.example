@@ -1,0 +1,12 @@
+# Example only. Copy to /etc/knockd.conf on the gateway and set your own ports.
+# The real knock sequence stays local: never commit it. Use three different
+# ports, not these placeholders. Run: sudo knockd -i <private-iface> -vD
+[options]
+    logfile = /var/log/knockd.log
+
+[openSSH]
+    sequence    = CHANGE_ME_1,CHANGE_ME_2,CHANGE_ME_3
+    seq_timeout = 10
+    tcpflags    = syn
+    # %IP% is filled in by knockd with the knocker's address.
+    command     = /usr/sbin/nft add element inet sfw knocked { %IP% }
