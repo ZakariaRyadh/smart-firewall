@@ -1,8 +1,9 @@
 """Gateway hook: knockd runs this once per correct knock.
 
-    python -m gateway.hook <ip>
+    python -m gateway.hook <ip>           normal knock: score it, then allow / block / flag
+    python -m gateway.hook --hard <ip>    longer knock: opens only for a flagged IP
 
-In knockd.conf:  command = /path/to/python -m gateway.hook %IP%
+In knockd.conf, one door per command (see gateway/knockd.conf.example).
 Paths come from the environment (same names as the dashboard):
     SFW_DB     state database   (default /var/lib/sfw/state.db)
     SFW_MODEL  model bundle     (default models/model.joblib)
@@ -19,10 +20,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from sfw.decide import ALLOW, decide
-from sfw.rules import BLOCK
-from sfw.state import (connect, live_features, log_decision, mark_known,
-                       recent_knocks, record_knock)
+from sfw.decide import ALLOW, Decision, decide
+from sfw.rules import BLOCK, HARDER
+from sfw.state import (clear_hard_flag, connect, flag_hard, hard_flag_active,
+                       live_features, log_decision, mark_known, recent_knocks,
+                       record_knock)
 
 ROOT = Path(__file__).resolve().parents[1]
 NFT = "/usr/sbin/nft"
@@ -67,24 +69,52 @@ def handle_knock(db, bundle, ip, now, fw):
     if d.action == ALLOW:
         fw.allow(ip)
         mark_known(db, ip, now)
+        clear_hard_flag(db, ip)
     elif d.action == BLOCK:
         fw.block(ip)
-    # harder_knock: nothing is opened yet (second door comes later)
+        clear_hard_flag(db, ip)        # a blocked IP must not get in through the hard door
+    elif d.action == HARDER:
+        flag_hard(db, ip, now)         # nothing opens, the longer knock can now work
+    return d
+
+
+def handle_hard_knock(db, ip, now, fw):
+    """The longer knock. Opens SSH only for an IP flagged by a "harder knock",
+    once, within HARD_WINDOW. Anyone else is ignored (no log, no reply), so a
+    stranger who guesses the sequence learns nothing. Returns the Decision, or
+    None when ignored. If nft fails the flag stays, so the user can retry.
+
+    It does not make the IP known and does not count as a normal knock.
+    """
+    ip = valid_ipv4(ip)
+    if not hard_flag_active(db, ip, now):
+        return None
+    fw.allow(ip)
+    clear_hard_flag(db, ip)
+    d = Decision(ALLOW, "hard_knock")
+    log_decision(db, ip, now, d)
     return d
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     logging.basicConfig(level=logging.INFO, format="sfw-hook %(levelname)s %(message)s")
-    if len(argv) != 1:
-        log.error("usage: python -m gateway.hook <ip>")
+    hard = "--hard" in argv
+    args = [a for a in argv if a != "--hard"]
+    if len(args) != 1 or len(argv) - len(args) > 1:
+        log.error("usage: python -m gateway.hook [--hard] <ip>")
         return 2
     try:
-        import joblib                          # slow import, only when needed
-        ip = valid_ipv4(argv[0])
-        bundle = joblib.load(os.environ.get("SFW_MODEL", str(ROOT / "models" / "model.joblib")))
+        ip = valid_ipv4(args[0])
         db = connect(os.environ.get("SFW_DB", "/var/lib/sfw/state.db"))
-        d = handle_knock(db, bundle, ip, datetime.now().astimezone(), Nft())
+        now = datetime.now().astimezone()
+        if hard:                               # no model needed, keeps it fast
+            d = handle_hard_knock(db, ip, now, Nft())
+            log.info("%s -> %s", ip, f"{d.action} ({d.reason})" if d else "hard knock ignored")
+            return 0
+        import joblib                          # slow import, only when needed
+        bundle = joblib.load(os.environ.get("SFW_MODEL", str(ROOT / "models" / "model.joblib")))
+        d = handle_knock(db, bundle, ip, now, Nft())
         log.info("%s -> %s (%s)", ip, d.action, d.reason)
         return 0
     except Exception:

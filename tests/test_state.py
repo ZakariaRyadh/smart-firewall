@@ -7,7 +7,8 @@ import pandas as pd
 
 from sfw.decide import Decision
 from sfw.features import CAP_SECONDS, FEATURES, build_features
-from sfw.state import (connect, decision_counts, get_meta, is_known,
+from sfw.state import (HARD_WINDOW, clear_hard_flag, connect, decision_counts,
+                       flag_hard, get_meta, hard_flag_active, is_known,
                        live_features, log_decision, mark_known, recent_decisions,
                        recent_knocks, record_knock, set_meta)
 
@@ -96,6 +97,42 @@ class TestParity(unittest.TestCase):
                 self.assertEqual(live[name], row[name], (name, now))
             record_knock(db, row["source_ip"], now)
             mark_known(db, row["source_ip"], now)  # normal rows: all allowed
+
+
+class TestHardFlag(unittest.TestCase):
+    """An IP told to do the longer knock is flagged for a few minutes."""
+
+    def setUp(self):
+        self.db = connect(":memory:")
+
+    def test_flag_is_active_inside_the_window(self):
+        flag_hard(self.db, "1.1.1.1", NOW)
+        self.assertTrue(hard_flag_active(self.db, "1.1.1.1", NOW))
+        self.assertTrue(hard_flag_active(self.db, "1.1.1.1",
+                                         NOW + timedelta(seconds=HARD_WINDOW - 1)))
+
+    def test_flag_expires(self):
+        flag_hard(self.db, "1.1.1.1", NOW)
+        self.assertFalse(hard_flag_active(self.db, "1.1.1.1",
+                                          NOW + timedelta(seconds=HARD_WINDOW + 1)))
+
+    def test_no_flag_by_default_and_other_ips_unaffected(self):
+        self.assertFalse(hard_flag_active(self.db, "1.1.1.1", NOW))
+        flag_hard(self.db, "1.1.1.1", NOW)
+        self.assertFalse(hard_flag_active(self.db, "2.2.2.2", NOW))
+
+    def test_flagging_again_extends_the_window(self):
+        flag_hard(self.db, "1.1.1.1", NOW)
+        later = NOW + timedelta(seconds=HARD_WINDOW - 10)
+        flag_hard(self.db, "1.1.1.1", later)
+        self.assertTrue(hard_flag_active(self.db, "1.1.1.1",
+                                         later + timedelta(seconds=HARD_WINDOW - 1)))
+
+    def test_clear_removes_the_flag(self):
+        flag_hard(self.db, "1.1.1.1", NOW)
+        clear_hard_flag(self.db, "1.1.1.1")
+        self.assertFalse(hard_flag_active(self.db, "1.1.1.1", NOW))
+        clear_hard_flag(self.db, "1.1.1.1")  # clearing twice is fine
 
 
 if __name__ == "__main__":

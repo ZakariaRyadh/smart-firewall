@@ -22,6 +22,7 @@ export const RULE_TEXT: Record<string, string> = {
   rate_5min: "more than 15 tries in 5 minutes",
   bad_knock_x3: "3 wrong knocks in a row",
   too_fast: "tries less than 1 second apart",
+  hard_knock: "passed the longer knock after an extra check",
 };
 
 export const isRule = (d: Decision) => d.score === null;

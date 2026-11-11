@@ -1,0 +1,7 @@
+# Example for gateway/knock.sh. Copy to ~/.config/sfw/knock.conf and set YOUR
+# ports. Never commit the real file: the sequences are the secret.
+# Must match the two doors in /etc/knockd.conf on the gateway.
+NORMAL="CHANGE_ME_1 CHANGE_ME_2 CHANGE_ME_3"
+HARD="CHANGE_ME_A CHANGE_ME_B CHANGE_ME_C CHANGE_ME_D CHANGE_ME_E CHANGE_ME_F"
+WAIT=4       # seconds to let the gateway decide (longer on the Pi)
+TIMEOUT=6    # seconds SSH waits before it counts the door as closed

@@ -6,7 +6,8 @@ from unittest import mock
 
 from gateway import hook
 from sfw.rules import BLOCK, HARDER
-from sfw.state import connect, decision_counts, is_known, recent_decisions
+from sfw.state import (HARD_WINDOW, connect, decision_counts, flag_hard,
+                       hard_flag_active, is_known, recent_decisions)
 
 NOW = datetime(2026, 11, 10, 12, 0, 0, tzinfo=timezone.utc)
 IP = "10.10.10.3"
@@ -69,6 +70,16 @@ class TestHandleKnock(unittest.TestCase):
         self.assertFalse(is_known(self.db, IP))
         self.assertEqual(decision_counts(self.db), {"harder_knock": 1})
 
+    def test_harder_knock_flags_the_ip_for_the_hard_door(self):
+        self.knock(-0.65)
+        self.assertTrue(hard_flag_active(self.db, IP, NOW))
+        self.assertFalse(hard_flag_active(self.db, "10.10.10.4", NOW))
+
+    def test_block_clears_an_earlier_flag(self):
+        self.knock(-0.65)                                   # flagged
+        self.knock(-0.8, now=NOW + timedelta(seconds=30))   # then blocked
+        self.assertFalse(hard_flag_active(self.db, IP, NOW + timedelta(seconds=31)))
+
     def test_rule_blocks_after_burst_even_if_model_allows(self):
         for i in range(6):                       # 6 knocks, 10 s apart, model says allow
             d = self.knock(-0.5, now=NOW + timedelta(seconds=10 * i))
@@ -101,6 +112,64 @@ class TestHandleKnock(unittest.TestCase):
         self.assertEqual(decision_counts(self.db), {})
 
 
+class TestHardKnock(unittest.TestCase):
+    """The longer second knock: opens SSH only for an IP that was flagged."""
+
+    def setUp(self):
+        self.db = connect(":memory:")
+        self.fw = FakeFw()
+
+    def hard(self, ip=IP, now=NOW, fw=None):
+        return hook.handle_hard_knock(self.db, ip, now, fw or self.fw)
+
+    def test_flagged_ip_is_let_in(self):
+        flag_hard(self.db, IP, NOW)
+        d = self.hard(now=NOW + timedelta(seconds=20))
+        self.assertEqual((d.action, d.reason, d.score), ("allow", "hard_knock", None))
+        self.assertEqual(self.fw.calls, [("allow", IP)])
+
+    def test_success_is_logged_but_does_not_make_the_ip_known(self):
+        flag_hard(self.db, IP, NOW)
+        self.hard()
+        self.assertEqual(decision_counts(self.db), {"allow": 1})
+        self.assertEqual(recent_decisions(self.db)[0]["reason"], "hard_knock")
+        self.assertFalse(is_known(self.db, IP))
+
+    def test_flag_works_only_once(self):
+        flag_hard(self.db, IP, NOW)
+        self.hard()
+        self.assertIsNone(self.hard())
+        self.assertEqual(self.fw.calls, [("allow", IP)])
+
+    def test_unflagged_ip_is_ignored_and_not_logged(self):
+        self.assertIsNone(self.hard())
+        self.assertEqual(self.fw.calls, [])
+        self.assertEqual(decision_counts(self.db), {})
+
+    def test_expired_flag_is_ignored(self):
+        flag_hard(self.db, IP, NOW)
+        self.assertIsNone(self.hard(now=NOW + timedelta(seconds=HARD_WINDOW + 1)))
+        self.assertEqual(self.fw.calls, [])
+
+    def test_other_ip_cannot_use_the_flag(self):
+        flag_hard(self.db, IP, NOW)
+        self.assertIsNone(self.hard(ip="10.10.10.4"))
+        self.assertEqual(self.fw.calls, [])
+
+    def test_nft_failure_fails_closed_and_keeps_the_flag(self):
+        flag_hard(self.db, IP, NOW)
+        with self.assertRaises(RuntimeError):
+            self.hard(fw=FailingFw())
+        self.assertTrue(hard_flag_active(self.db, IP, NOW))   # user can try again
+        self.assertEqual(decision_counts(self.db), {})        # nothing logged as allowed
+
+    def test_bad_ip_never_reaches_the_firewall(self):
+        for bad in ["1.2.3.4; reboot", "::1", "abc", ""]:
+            with self.assertRaises(ValueError):
+                self.hard(ip=bad)
+        self.assertEqual(self.fw.calls, [])
+
+
 class TestNft(unittest.TestCase):
     def test_allow_uses_fixed_argument_list(self):
         with mock.patch("gateway.hook.subprocess.run") as run:
@@ -129,9 +198,29 @@ class TestMain(unittest.TestCase):
         self.assertEqual(hook.main([]), 2)
         self.assertEqual(hook.main(["a", "b"]), 2)
 
+    def test_hard_flag_needs_exactly_one_ip(self):
+        self.assertEqual(hook.main(["--hard"]), 2)
+        self.assertEqual(hook.main(["--hard", "a", "b"]), 2)
+
+    def test_hard_run_opens_for_a_flagged_ip_and_ignores_others(self):
+        import tempfile
+        import joblib
+        with tempfile.TemporaryDirectory() as tmp:
+            model, dbfile = os.path.join(tmp, "m.joblib"), os.path.join(tmp, "s.db")
+            joblib.dump(bundle(-0.5), model)
+            db = connect(dbfile)
+            flag_hard(db, IP, datetime.now(timezone.utc))
+            env = {"SFW_MODEL": model, "SFW_DB": dbfile}
+            with mock.patch.dict(os.environ, env), mock.patch.object(hook, "Nft") as nft:
+                self.assertEqual(hook.main(["--hard", IP]), 0)
+                nft.return_value.allow.assert_called_once_with(IP)
+                self.assertEqual(hook.main(["--hard", "10.10.10.9"]), 0)  # ignored, not an error
+                nft.return_value.allow.assert_called_once()
+
     def test_bad_ip_fails_closed(self):
         with mock.patch.object(hook, "Nft") as nft:
             self.assertEqual(hook.main(["not-an-ip"]), 1)
+            self.assertEqual(hook.main(["--hard", "not-an-ip"]), 1)
         nft.assert_not_called()
 
     def test_missing_model_fails_closed(self):

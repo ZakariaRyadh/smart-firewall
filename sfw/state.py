@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS decisions (
     id INTEGER PRIMARY KEY, ts REAL NOT NULL, ip TEXT NOT NULL,
     action TEXT NOT NULL, reason TEXT NOT NULL, score REAL, features TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS hard_flags (
+    ip TEXT PRIMARY KEY, expires REAL NOT NULL);
 """
+
+HARD_WINDOW = 300  # seconds an IP has to finish the longer knock after a "harder knock"
 
 
 def connect(path):
@@ -61,6 +65,24 @@ def mark_known(db, ip, now):
 
 def is_known(db, ip):
     return db.execute("SELECT 1 FROM known_ips WHERE ip = ?", (ip,)).fetchone() is not None
+
+
+def flag_hard(db, ip, now, seconds=HARD_WINDOW):
+    """The model was unsure: this IP may open SSH with the longer knock for a while.
+    Flagging again restarts the window."""
+    with db:
+        db.execute("INSERT OR REPLACE INTO hard_flags (ip, expires) VALUES (?, ?)",
+                   (ip, now.timestamp() + seconds))
+
+
+def hard_flag_active(db, ip, now):
+    row = db.execute("SELECT expires FROM hard_flags WHERE ip = ?", (ip,)).fetchone()
+    return row is not None and row[0] >= now.timestamp()
+
+
+def clear_hard_flag(db, ip):
+    with db:
+        db.execute("DELETE FROM hard_flags WHERE ip = ?", (ip,))
 
 
 def recent_knocks(db, ip, now, seconds=300):

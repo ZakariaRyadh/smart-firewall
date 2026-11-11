@@ -1,14 +1,23 @@
 # Example only. Copy to /etc/knockd.conf on the gateway and set your own ports.
-# The real knock sequence stays local: never commit it. Use three different
-# ports, not these placeholders. Run: sudo knockd -i <private-iface> -vD
+# The real knock sequences stay local: never commit them. Use different ports
+# for every step, and make sure the two doors share no port.
+# Run: sudo knockd -i <private-iface> -vD
 [options]
     logfile = /var/log/knockd.log
 
+# Normal knock (3 ports). The hook scores it, then allows, blocks or flags the IP.
 [openSSH]
     sequence    = CHANGE_ME_1,CHANGE_ME_2,CHANGE_ME_3
     seq_timeout = 10
     tcpflags    = syn
-    # %IP% is filled in by knockd with the knocker's address. The hook scores
-    # the knock and then allows, blocks or ignores it (see gateway/hook.py).
+    # %IP% is filled in by knockd with the knocker's address.
     # Adjust the install folder to where the repo and .venv live on the gateway.
     command     = /bin/sh -c 'cd /opt/smart-firewall && .venv/bin/python -m gateway.hook %IP%'
+
+# Longer knock (6 ports). Opens SSH only for an IP the model was unsure about
+# (flagged "harder knock", valid 5 minutes, one use). Anyone else is ignored.
+[openSSHhard]
+    sequence    = CHANGE_ME_A,CHANGE_ME_B,CHANGE_ME_C,CHANGE_ME_D,CHANGE_ME_E,CHANGE_ME_F
+    seq_timeout = 15
+    tcpflags    = syn
+    command     = /bin/sh -c 'cd /opt/smart-firewall && .venv/bin/python -m gateway.hook --hard %IP%'
