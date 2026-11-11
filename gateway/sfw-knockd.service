@@ -1,0 +1,50 @@
+# systemd unit for knockd + the hook, tested in the gateway VM.
+# Runs as the unprivileged user "sfw" with only two capabilities, not as root.
+#
+# Install (as root), adjust paths and the interface name first:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin sfw
+#   install -d -o sfw -g sfw -m 750 /var/lib/sfw          # state database
+#   cp gateway/knockd.conf.example /etc/knockd.conf       # then set your real ports
+#   chown root:sfw /etc/knockd.conf && chmod 640 /etc/knockd.conf   # holds the secret sequences
+#   cp gateway/sfw-knockd.service /etc/systemd/system/ && systemctl daemon-reload
+#   nft -f /opt/smart-firewall/gateway/sfw.nft            # rules are loaded by root, once per boot
+#   systemctl start sfw-knockd
+# Check: grep Cap /proc/$(pidof knockd)/status   (expect 0000000000003000)
+#        systemd-analyze security sfw-knockd      (3.6 OK in the VM)
+
+[Unit]
+Description=Smart Firewall knockd (user sfw, network capabilities only)
+After=network.target
+
+[Service]
+User=sfw
+Group=sfw
+ExecStart=/usr/sbin/knockd -i enp2s0 -v -p /run/sfw-knockd/knockd.pid
+RuntimeDirectory=sfw-knockd
+Restart=on-failure
+# Only what the job needs: watch packets (RAW) and edit nftables (ADMIN).
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# The only writable place: the SQLite state.
+ReadWritePaths=/var/lib/sfw
+UMask=0027
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

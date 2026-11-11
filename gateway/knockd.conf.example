@@ -1,9 +1,11 @@
 # Example only. Copy to /etc/knockd.conf on the gateway and set your own ports.
 # The real knock sequences stay local: never commit them. Use different ports
 # for every step, and make sure the two doors share no port.
-# Run: sudo knockd -i <private-iface> -vD
+# Run as a service: see gateway/sfw-knockd.service (user sfw, not root).
+# For a quick test in a terminal: sudo knockd -i <private-iface> -vD
 [options]
-    logfile = /var/log/knockd.log
+    # Log to syslog / the journal. The service user "sfw" cannot write /var/log.
+    UseSyslog
 
 # Normal knock (3 ports). The hook scores it, then allows, blocks or flags the IP.
 [openSSH]
