@@ -3,9 +3,13 @@
 # SSH (22) is closed by default. knockd adds the knocker's IP to the "knocked"
 # set after a correct knock; the entry expires after 30 s.
 #
-# VM-specific: enp1s0 is the management card (kept open so SSH from the host
-# never locks out). On the Pi use tailscale0 and the LAN card instead, and test
-# with the `at` rollback first (see vault: Pi-Setup-and-Data-Pipeline).
+# MGMT is the admin way in: traffic on these interfaces is never filtered, so a
+# bug in the knock logic cannot lock the owner out.
+#   VM: "enp1s0" (the host's NAT card).   Pi: "tailscale0" (change the line below).
+# On the Pi only this table is ours: it does not touch Tailscale's own rules.
+# Undo without a reboot:  sudo nft delete table inet sfw
+# Test new rules on the Pi with the `at` rollback first (see vault: Pi-Setup-and-Data-Pipeline).
+define MGMT = { "enp1s0" }
 
 # Safe to reload: the next two lines create the table if missing, then delete
 # it, so the file below always starts clean (all in one atomic load).
@@ -27,10 +31,14 @@ table inet sfw {
     chain input {
         type filter hook input priority 0; policy drop;
         iif lo accept
-        iifname "enp1s0" accept
+        iifname $MGMT accept
         ip saddr @blocked drop
         ct state established,related accept
         icmp type echo-request accept
+        # Needed on Wi-Fi: the router's DHCP replies, and IPv6 neighbour discovery.
+        # Without them a "policy drop" can cut the machine's own network.
+        udp sport 67 udp dport 68 accept
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert, echo-request } accept
         ip saddr @knocked tcp dport 22 accept
     }
 }
