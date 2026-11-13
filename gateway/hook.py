@@ -65,6 +65,10 @@ def handle_knock(db, bundle, ip, now, fw):
     record_knock(db, ip, now, ok=True)
     knocks = recent_knocks(db, ip, now)
     d = decide(bundle, feats, knocks, now)
+    if d.action == ALLOW and hard_flag_active(db, ip, now):
+        # Already challenged: knocking the normal door again must not skip the
+        # longer knock. A block still wins, only an allow is held back.
+        d = Decision(HARDER, "flag_pending")
     log_decision(db, ip, now, d, feats)
     if d.action == ALLOW:
         fw.allow(ip)

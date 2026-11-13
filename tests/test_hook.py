@@ -80,6 +80,26 @@ class TestHandleKnock(unittest.TestCase):
         self.knock(-0.8, now=NOW + timedelta(seconds=30))   # then blocked
         self.assertFalse(hard_flag_active(self.db, IP, NOW + timedelta(seconds=31)))
 
+    def test_flagged_ip_cannot_get_in_with_another_normal_knock(self):
+        self.knock(-0.65)                                    # harder knock, flagged
+        d = self.knock(-0.5, now=NOW + timedelta(seconds=3)) # model now says allow
+        self.assertEqual((d.action, d.reason), (HARDER, "flag_pending"))
+        self.assertEqual(self.fw.calls, [])
+        self.assertFalse(is_known(self.db, IP))
+        self.assertTrue(hard_flag_active(self.db, IP, NOW + timedelta(seconds=4)))
+
+    def test_flagged_ip_is_still_blocked_by_a_block_decision(self):
+        self.knock(-0.65)
+        d = self.knock(-0.8, now=NOW + timedelta(seconds=3))
+        self.assertEqual(d.action, BLOCK)
+        self.assertEqual(self.fw.calls, [("block", IP)])
+
+    def test_normal_knock_works_again_after_the_flag_expires(self):
+        self.knock(-0.65)
+        d = self.knock(-0.5, now=NOW + timedelta(seconds=HARD_WINDOW + 1))
+        self.assertEqual(d.action, "allow")
+        self.assertEqual(self.fw.calls, [("allow", IP)])
+
     def test_rule_blocks_after_burst_even_if_model_allows(self):
         for i in range(6):                       # 6 knocks, 10 s apart, model says allow
             d = self.knock(-0.5, now=NOW + timedelta(seconds=10 * i))
